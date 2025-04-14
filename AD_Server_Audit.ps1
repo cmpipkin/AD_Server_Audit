@@ -15,6 +15,7 @@ param (
 # variables
 $serverListHash = @()
 $serverHash = [ordered]@{}
+$counter = 0
 
 # query AD servers and get all properties
 $serversAD = Get-ADComputer -Filter "OperatingSystem -like '*Server*'" -Properties *
@@ -25,6 +26,8 @@ add wanted properties to hash table
 add hash table to list
 #>
 foreach ($server in $serversAD) {
+    # increase counter
+    $counter++
     # server name
     $serverHash.Add("Server", "$($server.Name)")
     # type of OS
@@ -75,7 +78,8 @@ foreach ($server in $serversAD) {
                     $serverHash.add("Model", "$($cimData.Model)")
                 } else {
                     # give error code for failure reason
-                    $serverHash.add("WinRM Error", "$($cimData.Exception.Message)")
+                    Write-Host "$($server.Name) failed Get-CimInstance." -ForegroundColor Yellow
+                    Write-Host "$($cimData.Exception.Message)" -ForegroundColor Red
                 }
             }
         } else {
@@ -89,7 +93,23 @@ foreach ($server in $serversAD) {
 
     # Rest serverHash var for next itteration
     $serverHash = [ordered]@{}
+    # write progress to screen
+    Write-Progress -Activity "Gathering Data" -Status "Processing $counter of $($serversAD.Length)" -PercentComplete $(($counter/$serversAD.Length) * 100)
 }
 
 # export data to excel
-$serverListHash | Export-Excel -Path $ExcelFile -FreezeTopRow -WorksheetName "AD Server Audit"
+try {
+    # export gathered data to excel file
+    $writeFile = $serverListHash | Export-Excel -Path $ExcelFile -FreezeTopRow -WorksheetName "AD Server Audit"
+} catch {
+    $writeFile = $_
+} finally {
+    # check of file write failed
+    if (!$writeFile.Exception.Message) {
+        Write-Progress -Activity "Gathering Data" -Status "Done" -Completed
+        Write-Host "Wrote to file: $ExcelFile"
+    } else {
+        # give error 
+        Write-Host $writeFile
+    }
+}
